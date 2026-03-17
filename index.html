@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Venue Access Management System</title>
+
+<!-- Font Awesome for security icon -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+
+<style>
+:root {
+    --primary-yellow: #FFD700;
+    --secondary-yellow: #FFB300;
+    --white: #FFFFFF;
+    --dark-gray: #333333;
+}
+
+body {
+    font-family: 'Times New Roman', Times, serif;
+    background: linear-gradient(135deg, var(--white) 50%, var(--primary-yellow) 50%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    border: 15px solid #000;
+}
+
+.container {
+    background: white;
+    border: 2px solid var(--primary-yellow);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 500px;
+    padding: 2rem;
+    text-align: center;
+}
+
+.view-section { display: none; }
+.view-section.active { display: block; }
+
+.btn {
+    background: var(--primary-yellow);
+    padding: 12px;
+    width: 100%;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+#video-container {
+    width: 100%;
+    background: black;
+    margin-top: 10px;
+}
+
+video, canvas {
+    width: 100%;
+    border-radius: 8px;
+}
+
+input {
+    padding: 10px;
+    width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--dark-gray);
+    font-size: 16px;
+}
+
+h2 {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2><i class="fas fa-shield-alt"></i> Venue Access Management System</h2>
+
+<!-- LOGIN -->
+<div id="view-home" class="view-section active">
+    <p>Enter your ID</p>
+
+    <input id="user-id" placeholder="" autocomplete="off">
+
+    <div id="id-error" style="color:red; display:none; margin-top:5px;">Invalid ID ❌</div>
+
+    <button class="btn" onclick="validateID()">Verify ID</button>
+</div>
+
+<!-- CAMERA -->
+<div id="view-camera" class="view-section">
+    <p>Face Detection</p>
+    <p id="loading-msg">Loading AI...</p>
+
+    <div id="video-container">
+        <video id="video" autoplay muted></video>
+        <canvas id="overlay"></canvas>
+    </div>
+
+    <div id="scan-status" style="margin-top:10px;"></div>
+
+    <button class="btn" onclick="cancelLogin()">Cancel</button>
+</div>
+
+<!-- SUCCESS -->
+<div id="view-success" class="view-section">
+    <h2>Access Granted ✅</h2>
+    <div style="margin-top: 15px;">
+        <img id="success-face-img" src="" alt="Member face" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary-yellow); margin-bottom: 15px;">
+        <p style="margin: 5px 0;"><strong>Member ID:</strong> <span id="success-member-id"></span></p>
+        <p style="margin: 5px 0;"><strong>Name:</strong> <span id="success-member-name"></span></p>
+        <p style="margin: 5px 0;"><strong>Status:</strong> <span id="success-member-status" style="color: green;"></span></p>
+    </div>
+    <button class="btn" onclick="switchView('view-home'); document.getElementById('user-id').value='';">Done</button>
+</div>
+
+</div>
+
+<script>
+let videoStream = null;
+let detectionInterval = null;
+
+// Allowed member series
+const allowedSeries = ["332", "357", "162", "647"];
+
+// SWITCH VIEW
+function switchView(id) {
+    document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+}
+
+// ✅ ID VALIDATION
+function validateID() {
+    const enteredID = document.getElementById('user-id').value.trim();
+
+    // Extract series from the ID (last 3 digits)
+    const series = enteredID.slice(-3);
+
+    if (allowedSeries.includes(series)) {
+        document.getElementById('id-error').style.display = 'none';
+        startFaceLogin();
+    } else {
+        document.getElementById('id-error').style.display = 'block';
+    }
+}
+
+// START FACE LOGIN
+async function startFaceLogin() {
+    switchView('view-camera');
+
+    try {
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+
+        document.getElementById('loading-msg').style.display = 'none';
+
+        startCamera();
+
+    } catch {
+        alert("Failed to load AI models");
+    }
+}
+
+// CAMERA
+async function startCamera() {
+    const video = document.getElementById('video');
+
+    videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = videoStream;
+
+    video.onloadedmetadata = () => {
+        runDetection();
+    };
+}
+
+// FACE DETECTION
+function runDetection() {
+    const video = document.getElementById('video');
+    let count = 0;
+
+    detectionInterval = setInterval(async () => {
+        const face = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }));
+
+        if (face) {
+            count++;
+            document.getElementById('scan-status').innerText = `Scanning face... ${count}/10`;
+
+            if (count >= 10) {
+                finishLogin();
+            }
+        } else {
+            document.getElementById('scan-status').innerText = "No face detected. Please align yourself.";
+        }
+    }, 300);
+}
+
+// FINAL LOGIN (Mock API)
+async function finishLogin() {
+    // Capture face frame before stopping camera
+    const video = document.getElementById('video');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    const faceImgSrc = canvas.toDataURL('image/png');
+
+    stopCamera();
+
+    // Mock DB fetch based on entered ID
+    const enteredID = document.getElementById('user-id').value.trim();
+    const mockDb = {
+        "332": { name: "Naga durga rao", status: "manager" },
+        "357": { name: "snehitha", status: "Staff" },
+        "162": { name: "priyanka", status: "Regular Member" },
+        "647": { name: "madhu", status: "Admin" }
+    };
+    
+    const series = enteredID.slice(-3);
+    const memberInfo = mockDb[series] || { name: "Unknown User", status: "Authorized" };
+
+    // Update success view
+    document.getElementById('success-face-img').src = faceImgSrc;
+    document.getElementById('success-member-id').innerText = enteredID;
+    document.getElementById('success-member-name').innerText = memberInfo.name;
+    document.getElementById('success-member-status').innerText = memberInfo.status;
+
+    // Mock API response for demo
+    const data = { status: "success" };
+
+    if (data.status === "success") {
+        switchView('view-success');
+    } else {
+        alert("Access Denied");
+    }
+}
+
+// STOP CAMERA
+function stopCamera() {
+    if (detectionInterval) clearInterval(detectionInterval);
+    if (videoStream) videoStream.getTracks().forEach(t => t.stop());
+}
+
+// CANCEL
+function cancelLogin() {
+    stopCamera();
+    switchView('view-home');
+}
+</script>
+
+</body>
+</html>
